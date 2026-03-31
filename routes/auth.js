@@ -8,6 +8,7 @@ const User = require('../models/User');
 const Otp = require('../models/Otp');
 const { generateOtp, sendOtpEmail } = require('../services/emailService');
 const authMiddleware = require('../middleware/auth');
+const { notify } = require('../services/notificationHelper');
 
 // Google OAuth client
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
@@ -201,6 +202,10 @@ router.post('/register', [
     await user.save();
 
     const token = generateToken(user._id);
+
+    // 🔔 Send welcome notification (async, non-blocking)
+    notify(user._id, 'success', '🎉 Welcome to SkillForge!', `Your account has been created. Start forging your skills, ${user.name.split(' ')[0]}!`);
+
     return res.status(201).json({ success: true, message: 'Account created!', token, user: safeUser(user) });
   } catch (err) {
     console.error('Register error:', err);
@@ -230,6 +235,10 @@ router.post('/login', [
     await user.save();
 
     const token = generateToken(user._id);
+
+    // 🔔 Send login notification
+    notify(user._id, 'info', '👋 Welcome back!', `Logged in successfully at ${new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' })}`);
+
     return res.json({ success: true, message: 'Welcome back!', token, user: safeUser(user) });
   } catch (err) {
     console.error('Login error:', err);
