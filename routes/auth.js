@@ -52,6 +52,14 @@ router.post('/send-otp', [
       }
     }
 
+    // For reset: check if account exists
+    if (purpose === 'reset') {
+      const existing = await User.findOne({ email });
+      if (!existing) {
+        return res.status(404).json({ success: false, message: 'No account found with this email.' });
+      }
+    }
+
     // Rate-limiting: allow max 3 OTP requests per 10 min
     const recentCount = await Otp.countDocuments({ email, purpose });
     if (recentCount >= 3) {
@@ -81,13 +89,13 @@ router.post('/send-otp', [
     if (err.message === 'EMAIL_NOT_CONFIGURED') {
       return res.status(500).json({
         success: false,
-        message: 'Email service not set up yet. Get a free Resend API key at resend.com and add RESEND_API_KEY to server/.env',
+        message: 'Email service not set up yet. Please add your EMAIL_USER and EMAIL_PASS (App Password) to server/.env',
       });
     }
     if (err.message?.includes('EAUTH') || err.message?.includes('Invalid login') || err.message?.includes('BadCredentials')) {
       return res.status(500).json({
         success: false,
-        message: 'Gmail App Password is incorrect. Use Resend instead: get a free API key at resend.com',
+        message: 'Gmail App Password is incorrect. You must generate a 16-letter App Password in your Google Account Security settings.',
       });
     }
     return res.status(500).json({ success: false, message: 'Failed to send OTP. Please try again.' });
@@ -225,6 +233,46 @@ router.post('/login', [
     return res.json({ success: true, message: 'Welcome back!', token, user: safeUser(user) });
   } catch (err) {
     console.error('Login error:', err);
+    return res.status(500).json({ success: false, message: 'Server error.' });
+  }
+});
+
+// ────────────────────────────────────────────────
+// POST /api/auth/reset-password
+// ────────────────────────────────────────────────
+router.post('/reset-password', [
+  body('email').isEmail().normalizeEmail(),
+  body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
+  body('preAuthToken').notEmpty().withMessage('Verification required'),
+], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) return res.status(400).json({ success: false, errors: errors.array() });
+
+  const { email, password, preAuthToken } = req.body;
+
+  try {
+    let decoded;
+    try {
+      decoded = jwt.verify(preAuthToken, process.env.JWT_SECRET);
+    } catch {
+      return res.status(401).json({ success: false, message: 'Session expired. Please verify OTP again.' });
+    }
+
+    if (decoded.email !== email || decoded.purpose !== 'reset') {
+      return res.status(401).json({ success: false, message: 'Invalid verification session.' });
+    }
+
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found.' });
+    }
+
+    user.password = password;
+    await user.save();
+
+    return res.json({ success: true, message: 'Password has been reset successfully. You can now log in.' });
+  } catch (err) {
+    console.error('Reset password error:', err);
     return res.status(500).json({ success: false, message: 'Server error.' });
   }
 });

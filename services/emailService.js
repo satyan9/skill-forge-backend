@@ -1,4 +1,4 @@
-const { Resend } = require('resend');
+const nodemailer = require('nodemailer');
 
 /** Generate secure 6-digit OTP */
 function generateOtp() {
@@ -43,58 +43,52 @@ function buildOtpHtml(otp) {
 const LINE = '─'.repeat(55);
 
 /**
- * Send OTP via Resend (API key already configured).
- *
- * Sandbox rule: Resend free sandbox can only deliver to the
- * email address used to register at resend.com.
- * Set RESEND_VERIFIED_DOMAIN=true after verifying a domain
- * at resend.com/domains to send to any address.
+ * Send OTP via Gmail SMTP using Nodemailer.
  */
 async function sendOtpEmail(toEmail, otp) {
-  const apiKey = process.env.RESEND_API_KEY;
+  const emailUser = process.env.EMAIL_USER;
+  const emailPass = process.env.EMAIL_PASS;
 
   // ── Check configured ──
-  if (!apiKey || apiKey.includes('your_')) {
+  if (!emailUser || !emailPass) {
     // Fallback: print to console so dev flow still works
     console.log(`\n${LINE}`);
-    console.log('  ⚠️  RESEND_API_KEY not set — printing OTP to console');
+    console.log('  ⚠️  EMAIL_USER and EMAIL_PASS not set in .env — printing OTP to console');
     console.log(`  To   : ${toEmail}`);
     console.log(`  Code : \x1b[33m${otp}\x1b[0m`);
     console.log(`${LINE}\n`);
     return { devMode: true };
   }
 
-  const resend = new Resend(apiKey);
-
-  // In sandbox mode → redirect to Resend account owner's email
-  const domainVerified = process.env.RESEND_VERIFIED_DOMAIN === 'true';
-  const deliverTo = domainVerified ? toEmail : (process.env.RESEND_OWNER_EMAIL || toEmail);
-
-  console.log(`\n${LINE}`);
-  console.log(`  📤  Sending OTP via Resend`);
-  console.log(`  Signup email    : ${toEmail}`);
-  console.log(`  Delivering to   : ${deliverTo}`);
-  if (!domainVerified && deliverTo !== toEmail) {
-    console.log(`  ⚠️  Sandbox mode: OTP goes to Resend account inbox (${deliverTo})`);
-  }
-
-  const result = await resend.emails.send({
-    from: 'SkillForge AI <onboarding@resend.dev>',
-    to: [deliverTo],
-    subject: 'Your SkillForge AI verification code',
-    html: buildOtpHtml(otp),
+  const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+      user: emailUser,
+      pass: emailPass,
+    },
   });
 
-  if (result.error) {
-    console.log(`  ❌  Resend error: ${result.error.message}`);
-    console.log(`${LINE}\n`);
-    throw new Error(result.error.message);
-  }
+  console.log(`\n${LINE}`);
+  console.log(`  📤  Sending OTP via Gmail`);
+  console.log(`  Delivering to   : ${toEmail}`);
 
-  console.log(`  ✅  OTP email sent successfully!`);
-  console.log(`  📬  Check inbox: ${deliverTo}`);
-  console.log(`${LINE}\n`);
-  return result;
+  try {
+    const info = await transporter.sendMail({
+      from: `"SkillForge AI" <${emailUser}>`,
+      to: toEmail,
+      subject: 'Your SkillForge AI verification code',
+      html: buildOtpHtml(otp),
+    });
+
+    console.log(`  ✅  OTP email sent successfully!`);
+    console.log(`  📬  Message ID: ${info.messageId}`);
+    console.log(`${LINE}\n`);
+    return info;
+  } catch (error) {
+    console.log(`  ❌  Nodemailer error: ${error.message}`);
+    console.log(`${LINE}\n`);
+    throw new Error(error.message);
+  }
 }
 
 module.exports = { generateOtp, sendOtpEmail };
