@@ -3,6 +3,7 @@ const router = express.Router();
 const { body, validationResult } = require('express-validator');
 const authMiddleware = require('../middleware/auth');
 const User = require('../models/User');
+const Submission = require('../models/Submission');
 
 // All routes require authentication
 router.use(authMiddleware);
@@ -32,7 +33,7 @@ router.post(
 
       const {
         topic,
-        difficulty = 'Medium',
+        difficulty = 'Beginner',
         language = 'javascript',
         questionType = 'coding',
         question = {},
@@ -44,7 +45,8 @@ router.post(
         status = 'completed',
       } = req.body;
 
-      const submission = {
+      const submission = new Submission({
+        userId: user._id,
         timestamp: new Date(),
         topic,
         difficulty,
@@ -57,18 +59,18 @@ router.post(
         score: Math.min(Math.max(Number(score) || 0, 0), 100),
         timeTaken,
         status,
-      };
+      });
 
-      user.submissions.push(submission);
-      user.recalculateStats();
+      await submission.save();
+
+      const allSubs = await Submission.find({ userId: user._id });
+      user.recalculateStats(allSubs);
       await user.save();
-
-      const savedSubmission = user.submissions[user.submissions.length - 1];
 
       return res.status(201).json({
         success: true,
         message: 'Submission saved successfully',
-        submission: savedSubmission,
+        submission,
         stats: user.stats,
       });
     } catch (err) {
@@ -92,16 +94,17 @@ router.get('/', async (req, res) => {
     const user = await User.findById(req.user._id);
     if (!user) return res.status(404).json({ success: false, message: 'User not found' });
 
-    let subs = [...user.submissions].reverse(); // newest first
+    let query = { userId: req.user._id };
+    if (topic) query.topic = { $regex: topic, $options: 'i' };
+    if (status) query.status = status;
 
-    // filter by topic
-    if (topic) subs = subs.filter(s => s.topic && s.topic.toLowerCase().includes(topic.toLowerCase()));
-    // filter by status
-    if (status) subs = subs.filter(s => s.status === status);
-
-    const total = subs.length;
+    const total = await Submission.countDocuments(query);
     const startIdx = (page - 1) * limit;
-    const paginated = subs.slice(startIdx, startIdx + limit);
+    
+    const paginated = await Submission.find(query)
+      .sort({ timestamp: -1 })
+      .skip(startIdx)
+      .limit(limit);
 
     return res.json({
       success: true,
@@ -129,7 +132,7 @@ router.get('/:id', async (req, res) => {
     const user = await User.findById(req.user._id);
     if (!user) return res.status(404).json({ success: false, message: 'User not found' });
 
-    const submission = user.submissions.id(req.params.id);
+    const submission = await Submission.findOne({ _id: req.params.id, userId: req.user._id });
     if (!submission) return res.status(404).json({ success: false, message: 'Submission not found' });
 
     return res.json({ success: true, submission });
@@ -148,11 +151,11 @@ router.delete('/:id', async (req, res) => {
     const user = await User.findById(req.user._id);
     if (!user) return res.status(404).json({ success: false, message: 'User not found' });
 
-    const submission = user.submissions.id(req.params.id);
+    const submission = await Submission.findOneAndDelete({ _id: req.params.id, userId: req.user._id });
     if (!submission) return res.status(404).json({ success: false, message: 'Submission not found' });
 
-    submission.deleteOne();
-    user.recalculateStats();
+    const allSubs = await Submission.find({ userId: req.user._id });
+    user.recalculateStats(allSubs);
     await user.save();
 
     return res.json({ success: true, message: 'Submission deleted', stats: user.stats });
@@ -171,9 +174,11 @@ router.get('/stats/summary', async (req, res) => {
     const user = await User.findById(req.user._id);
     if (!user) return res.status(404).json({ success: false, message: 'User not found' });
 
+    const allSubs = await Submission.find({ userId: req.user._id });
+
     // Build topic breakdown
     const topicMap = {};
-    user.submissions.forEach(s => {
+    allSubs.forEach(s => {
       if (!s.topic) return;
       if (!topicMap[s.topic]) topicMap[s.topic] = { count: 0, totalScore: 0, passed: 0 };
       topicMap[s.topic].count++;
@@ -194,7 +199,7 @@ router.get('/stats/summary', async (req, res) => {
       const d = new Date(now);
       d.setDate(d.getDate() - (6 - i));
       const dateStr = d.toISOString().split('T')[0];
-      const count = user.submissions.filter(s => {
+      const count = allSubs.filter(s => {
         const sDate = new Date(s.timestamp).toISOString().split('T')[0];
         return sDate === dateStr;
       }).length;
@@ -206,7 +211,7 @@ router.get('/stats/summary', async (req, res) => {
       stats: user.stats,
       topicBreakdown,
       recentActivity,
-      totalSubmissions: user.submissions.length,
+      totalSubmissions: allSubs.length,
     });
   } catch (err) {
     console.error('Stats error:', err);

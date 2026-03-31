@@ -342,6 +342,116 @@ router.post('/google', [
 });
 
 // ────────────────────────────────────────────────
+// POST /api/auth/github
+// ────────────────────────────────────────────────
+router.post('/github', async (req, res) => {
+  try {
+    const { code, redirectUri } = req.body;
+    const clientId = process.env.GITHUB_CLIENT_ID;
+    const clientSecret = process.env.GITHUB_CLIENT_SECRET;
+
+    if (!clientId || !clientSecret) {
+      return res.status(500).json({ success: false, message: 'GitHub credentials missing on server' });
+    }
+
+    const tokenRes = await fetch('https://github.com/login/oauth/access_token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: JSON.stringify({ client_id: clientId, client_secret: clientSecret, code, redirect_uri: redirectUri })
+    });
+    const tokenData = await tokenRes.json();
+    if (tokenData.error) return res.status(400).json({ success: false, message: tokenData.error_description });
+    const accessToken = tokenData.access_token;
+
+    const userRes = await fetch('https://api.github.com/user', { headers: { Authorization: `Bearer ${accessToken}` } });
+    const ghUser = await userRes.json();
+
+    const emailRes = await fetch('https://api.github.com/user/emails', { headers: { Authorization: `Bearer ${accessToken}` } });
+    const emails = await emailRes.json();
+    const primaryEmail = emails.find(e => e.primary)?.email || emails[0]?.email;
+
+    if (!primaryEmail) return res.status(400).json({ success: false, message: 'No public email found on GitHub.' });
+
+    let user = await User.findOne({ email: primaryEmail });
+    if (!user) {
+      user = new User({
+        name: ghUser.name || ghUser.login,
+        email: primaryEmail,
+        password: `github_oauth_${ghUser.id}_${Date.now()}`,
+        emailVerified: true,
+        avatar: ghUser.avatar_url,
+        authProviders: ['github'],
+        githubId: ghUser.id.toString(),
+      });
+      await user.save();
+    } else {
+      if (!user.authProviders.includes('github')) user.authProviders.push('github');
+      user.githubId = ghUser.id.toString();
+      if (!user.avatar) user.avatar = ghUser.avatar_url;
+      user.stats.lastActive = new Date();
+      await user.save();
+    }
+
+    const token = generateToken(user._id);
+    return res.json({ success: true, message: 'Welcome back!', token, user: safeUser(user) });
+  } catch (err) {
+    console.error('GitHub auth error:', err);
+    return res.status(500).json({ success: false, message: 'GitHub authentication failed.' });
+  }
+});
+
+// ────────────────────────────────────────────────
+// POST /api/auth/facebook
+// ────────────────────────────────────────────────
+router.post('/facebook', async (req, res) => {
+  try {
+    const { code, redirectUri } = req.body;
+    const clientId = process.env.FACEBOOK_CLIENT_ID;
+    const clientSecret = process.env.FACEBOOK_CLIENT_SECRET;
+
+    if (!clientId || !clientSecret) {
+      return res.status(500).json({ success: false, message: 'Facebook credentials missing on server' });
+    }
+
+    const tokenRes = await fetch(`https://graph.facebook.com/v19.0/oauth/access_token?client_id=${clientId}&redirect_uri=${redirectUri}&client_secret=${clientSecret}&code=${code}`);
+    const tokenData = await tokenRes.json();
+    if (tokenData.error) return res.status(400).json({ success: false, message: tokenData.error.message });
+    const accessToken = tokenData.access_token;
+
+    const userRes = await fetch(`https://graph.facebook.com/me?fields=id,name,email,picture.type(large)&access_token=${accessToken}`);
+    const fbUser = await userRes.json();
+
+    if (!fbUser.email) return res.status(400).json({ success: false, message: 'No email associated with this Facebook account.' });
+
+    let user = await User.findOne({ email: fbUser.email });
+    if (!user) {
+      user = new User({
+        name: fbUser.name,
+        email: fbUser.email,
+        password: `facebook_oauth_${fbUser.id}_${Date.now()}`,
+        emailVerified: true,
+        avatar: fbUser.picture?.data?.url || null,
+        authProviders: ['facebook'],
+        facebookId: fbUser.id,
+      });
+      await user.save();
+    } else {
+      if (!user.authProviders.includes('facebook')) user.authProviders.push('facebook');
+      user.facebookId = fbUser.id;
+      if (!user.avatar) user.avatar = fbUser.picture?.data?.url || null;
+      user.stats.lastActive = new Date();
+      await user.save();
+    }
+
+    const token = generateToken(user._id);
+    return res.json({ success: true, message: 'Welcome back!', token, user: safeUser(user) });
+  } catch (err) {
+    console.error('Facebook auth error:', err);
+    return res.status(500).json({ success: false, message: 'Facebook authentication failed.' });
+  }
+});
+
+// ────────────────────────────────────────────────
 // GET /api/auth/me
 // ────────────────────────────────────────────────
 router.get('/me', authMiddleware, async (req, res) => {

@@ -1,33 +1,7 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 
-const SubmissionSchema = new mongoose.Schema({
-  timestamp: { type: Date, default: Date.now },
-  topic: { type: String, required: true },
-  difficulty: { type: String, enum: ['Easy', 'Medium', 'Hard'], default: 'Medium' },
-  language: { type: String, default: 'javascript' },
-  questionType: { type: String, default: 'coding' },
-  question: {
-    title: String,
-    description: String,
-    examples: [{ input: String, output: String, explanation: String }],
-    constraints: [String],
-    hints: [String],
-    testCases: mongoose.Schema.Types.Mixed,
-  },
-  userCode: { type: String, default: '' },
-  executionResult: {
-    passed: { type: Boolean, default: false },
-    output: String,
-    error: String,
-    testsPassed: { type: Number, default: 0 },
-    testsTotal: { type: Number, default: 0 },
-  },
-  review: { type: mongoose.Schema.Types.Mixed, default: null },
-  score: { type: Number, default: 0, min: 0, max: 100 },
-  timeTaken: { type: Number, default: 0 },
-  status: { type: String, enum: ['completed', 'partial', 'failed'], default: 'completed' },
-}, { _id: true });
+
 
 const UserSchema = new mongoose.Schema({
   name: { type: String, required: true, trim: true, minlength: 2, maxlength: 80 },
@@ -42,7 +16,7 @@ const UserSchema = new mongoose.Schema({
   facebookId: { type: String, default: null },
   githubId: { type: String, default: null },
 
-  submissions: [SubmissionSchema],
+
 
   stats: {
     totalSubmissions: { type: Number, default: 0 },
@@ -51,6 +25,7 @@ const UserSchema = new mongoose.Schema({
     topicsAttempted: { type: [String], default: [] },
     streakDays: { type: Number, default: 0 },
     lastActive: { type: Date, default: Date.now },
+    moduleScores: { type: Map, of: Number, default: {} },
   },
 
   createdAt: { type: Date, default: Date.now },
@@ -72,13 +47,63 @@ UserSchema.methods.comparePassword = async function (candidatePassword) {
   return bcrypt.compare(candidatePassword, this.password);
 };
 
-UserSchema.methods.recalculateStats = function () {
-  const subs = this.submissions;
+UserSchema.methods.recalculateStats = function (subs = []) {
   this.stats.totalSubmissions = subs.length;
   this.stats.totalPassed = subs.filter(s => s.executionResult && s.executionResult.passed).length;
   const scores = subs.map(s => s.score || 0);
   this.stats.averageScore = scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
   this.stats.topicsAttempted = [...new Set(subs.map(s => s.topic).filter(Boolean))];
+
+  const moduleSums = {};
+  const moduleCounts = {};
+  subs.forEach(s => {
+    const mod = s.topic || 'Programming'; // default fallback
+    if (!moduleSums[mod]) { moduleSums[mod] = 0; moduleCounts[mod] = 0; }
+    moduleSums[mod] += (s.score || 0);
+    moduleCounts[mod]++;
+  });
+
+  const moduleScores = {};
+  for (const mod in moduleSums) {
+    moduleScores[mod] = Math.round(moduleSums[mod] / moduleCounts[mod]);
+  }
+  this.stats.moduleScores = moduleScores;
+
+  // ── Streak calculation ────────────────────────────────
+  // Get unique calendar days (IST-safe: use UTC date string)
+  const daySet = new Set(
+    subs.map(s => new Date(s.timestamp).toISOString().split('T')[0])
+  );
+  const days = [...daySet].sort(); // ascending YYYY-MM-DD strings
+
+  const todayStr = new Date().toISOString().split('T')[0];
+  const yesterdayStr = (() => {
+    const d = new Date();
+    d.setUTCDate(d.getUTCDate() - 1);
+    return d.toISOString().split('T')[0];
+  })();
+
+  // Streak only counts if user submitted today OR yesterday (generous 1-day grace)
+  if (!daySet.has(todayStr) && !daySet.has(yesterdayStr)) {
+    this.stats.streakDays = 0;
+  } else {
+    // Walk backwards from today counting consecutive days present in daySet
+    let streak = 0;
+    let check = new Date();
+    check.setUTCHours(0, 0, 0, 0);
+
+    while (true) {
+      const checkStr = check.toISOString().split('T')[0];
+      if (daySet.has(checkStr)) {
+        streak++;
+        check.setUTCDate(check.getUTCDate() - 1);
+      } else {
+        break;
+      }
+    }
+    this.stats.streakDays = streak;
+  }
+
   this.stats.lastActive = new Date();
   this.updatedAt = new Date();
 };
