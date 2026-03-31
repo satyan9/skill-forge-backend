@@ -204,7 +204,7 @@ router.post('/register', [
     const token = generateToken(user._id);
 
     // 🔔 Send welcome notification (async, non-blocking)
-    notify(user._id, 'success', '🎉 Welcome to SkillForge!', `Your account has been created. Start forging your skills, ${user.name.split(' ')[0]}!`);
+    notify(user._id, 'success', '🎉 Welcome to SkillPilot!', `Your account has been created. Start pilotting your career with AI, ${user.name.split(' ')[0]}!`);
 
     return res.status(201).json({ success: true, message: 'Account created!', token, user: safeUser(user) });
   } catch (err) {

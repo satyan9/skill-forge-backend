@@ -3,6 +3,16 @@ const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 
+// Connection caching for Vercel
+let isConnected = false;
+async function connectToDatabase() {
+  if (isConnected) return;
+  const db = await mongoose.connect(process.env.MONGODB_URI);
+  isConnected = db.connections[0].readyState === 1;
+  const { startChangeStream } = require('./routes/notifications');
+  startChangeStream();
+}
+
 const app = express();
 
 // ── CORS ──────────────────────────────────
@@ -49,21 +59,27 @@ app.use((err, req, res, next) => {
 const MONGODB_URI = process.env.MONGODB_URI;
 if (!MONGODB_URI) {
   console.error('MONGODB_URI not set in .env');
-  process.exit(1);
 }
 
-mongoose
-  .connect(MONGODB_URI)
-  .then(() => {
-    console.log('✅ MongoDB connected successfully');
-    startChangeStream(); // ← real-time notification change stream
+// Middleware to ensure DB is connected before handling routes
+app.use(async (req, res, next) => {
+  try {
+    await connectToDatabase();
+    next();
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Export for Vercel
+module.exports = app;
+
+// Local development
+if (process.env.NODE_ENV !== 'production') {
+  connectToDatabase().then(() => {
     const PORT = process.env.PORT || 5000;
     app.listen(PORT, () => {
       console.log(`🚀 SkillForge API running on http://localhost:${PORT}`);
-      console.log(`   Health: http://localhost:${PORT}/api/health`);
     });
-  })
-  .catch((err) => {
-    console.error('❌ MongoDB connection failed:', err.message);
-    process.exit(1);
   });
+}
