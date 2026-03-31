@@ -6,7 +6,11 @@ function generateOtp() {
 }
 
 /** Build HTML email */
-function buildOtpHtml(otp) {
+function buildOtpHtml(otp, purpose = 'register') {
+  const msgText = purpose === 'reset' 
+    ? 'Use the code below to verify your email and reset your password.'
+    : 'Use the code below to verify your email and complete your registration.';
+
   return `<!DOCTYPE html>
 <html><head><meta charset="UTF-8">
 <style>
@@ -27,7 +31,7 @@ function buildOtpHtml(otp) {
   <div class="wrap">
     <div class="header"><div class="logo-text">⚡ SkillForge AI</div></div>
     <div class="body">
-      <div class="msg">Use the code below to verify your email and complete your registration.</div>
+      <div class="msg">${msgText}</div>
       <div class="otp-box">
         <div class="otp-lbl">Verification Code</div>
         <div class="otp-code">${otp}</div>
@@ -45,7 +49,7 @@ const LINE = '─'.repeat(55);
 /**
  * Send OTP via Gmail SMTP using Nodemailer.
  */
-async function sendOtpEmail(toEmail, otp) {
+async function sendOtpEmail(toEmail, otp, purpose = 'register') {
   const emailUser = process.env.EMAIL_USER;
   const emailPass = process.env.EMAIL_PASS;
 
@@ -73,11 +77,15 @@ async function sendOtpEmail(toEmail, otp) {
   console.log(`  Delivering to   : ${toEmail}`);
 
   try {
+    const subjectLine = purpose === 'reset' 
+      ? 'Your password reset code for SkillForge AI'
+      : 'Your SkillForge AI verification code';
+
     const info = await transporter.sendMail({
       from: `"SkillForge AI" <${emailUser}>`,
       to: toEmail,
-      subject: 'Your SkillForge AI verification code',
-      html: buildOtpHtml(otp),
+      subject: subjectLine,
+      html: buildOtpHtml(otp, purpose),
     });
 
     console.log(`  ✅  OTP email sent successfully!`);
