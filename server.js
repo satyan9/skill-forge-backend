@@ -71,15 +71,17 @@ app.use(async (req, res, next) => {
   }
 });
 
-// Export for Vercel
-module.exports = app;
-
-// Local development
-if (process.env.NODE_ENV !== 'production') {
+// Start the server if NOT running on Vercel
+if (!process.env.VERCEL) {
   connectToDatabase().then(() => {
     const PORT = process.env.PORT || 5000;
-    app.listen(PORT, () => {
-      console.log(`🚀 SkillForge API running on http://localhost:${PORT}`);
+    app.listen(PORT, '0.0.0.0', () => {
+      console.log(`🚀 SkillPilot API running on port ${PORT}`);
     });
+  }).catch(err => {
+    console.error('Failed to start server:', err);
+    process.exit(1);
   });
 }
+
+module.exports = app;
