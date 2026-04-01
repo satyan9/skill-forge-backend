@@ -40,7 +40,7 @@ async function main() {
   const notif = await Notification.create({
     userId:  user._id,
     type:    'achievement',
-    title:   '🏆 SkillForge Notification Test',
+    title:   '🏆 Skillpilot Notification Test',
     message: `Hey ${user.name.split(' ')[0]}! Your real-time notification system is working perfectly. This was pushed via MongoDB → Change Stream → SSE!`,
     link:    '/profile',
   });

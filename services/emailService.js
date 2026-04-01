@@ -29,7 +29,7 @@ function buildOtpHtml(otp, purpose = 'register') {
 </head>
 <body>
   <div class="wrap">
-    <div class="header"><div class="logo-text">⚡ SkillForge AI</div></div>
+    <div class="header"><div class="logo-text">⚡ Skillpilot AI</div></div>
     <div class="body">
       <div class="msg">${msgText}</div>
       <div class="otp-box">
@@ -39,7 +39,7 @@ function buildOtpHtml(otp, purpose = 'register') {
       </div>
       <div style="color:#ff9999;font-size:13px">🔒 Never share this code with anyone.</div>
     </div>
-    <div class="footer">© ${new Date().getFullYear()} SkillForge AI</div>
+    <div class="footer">© ${new Date().getFullYear()} Skillpilot AI</div>
   </div>
 </body></html>`;
 }
@@ -78,11 +78,11 @@ async function sendOtpEmail(toEmail, otp, purpose = 'register') {
 
   try {
     const subjectLine = purpose === 'reset' 
-      ? 'Your password reset code for SkillForge AI'
-      : 'Your SkillForge AI verification code';
+      ? 'Your password reset code for Skillpilot AI'
+      : 'Your Skillpilot AI verification code';
 
     const info = await transporter.sendMail({
-      from: `"SkillForge AI" <${emailUser}>`,
+      from: `"Skillpilot AI" <${emailUser}>`,
       to: toEmail,
       subject: subjectLine,
       html: buildOtpHtml(otp, purpose),

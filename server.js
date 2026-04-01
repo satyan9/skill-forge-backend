@@ -38,7 +38,7 @@ app.use('/api/notifications', notifRouter);
 app.get('/api/health', (req, res) => {
   res.json({
     success: true,
-    status: 'SkillForge API is running',
+    status: 'Skillpilot API is running',
     timestamp: new Date().toISOString(),
     dbStatus: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
   });
